@@ -23,6 +23,7 @@
  */
 
 use tool_certificate\my_certificates_table;
+use tool_certificate\local\custom_font_manager;
 
 defined('MOODLE_INTERNAL') || die;
 
@@ -101,6 +102,20 @@ if ($hassiteconfig) {
         new lang_string('allowfilters', 'tool_certificate'),
         new lang_string('allowfilters_desc', 'tool_certificate'),
         ['multilang' => 1]));
+
+    $fontsetting = new admin_setting_configstoredfile(
+        'tool_certificate/customfonts',
+        new lang_string('customfonts', 'tool_certificate'),
+        new lang_string('customfonts_desc', 'tool_certificate'),
+        custom_font_manager::FILEAREA,
+        0,
+        [
+            'maxfiles' => -1,
+            'accepted_types' => custom_font_manager::get_accepted_file_types(),
+        ]
+    );
+    $fontsetting->set_updatedcallback('tool_certificate_customfonts_updated');
+    $settings->add($fontsetting);
 
     $ADMIN->add('certificates', $settings);
 

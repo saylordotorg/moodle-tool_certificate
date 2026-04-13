@@ -24,6 +24,8 @@
 
 $string['dateformat'] = 'Date format';
 $string['dateformat_help'] = 'This is the format of the date that will be displayed';
+$string['dateformatdayinwordsmonthyear'] = 'this {$a->dayword} day of {$a->month}, {$a->yearword}.';
+$string['dateformatordinaldayofmonthyear'] = '{$a->day}{$a->suffix} Day of {$a->month}, {$a->year}.';
 $string['dateitem'] = 'Date item';
 $string['dateitem_help'] = 'This will be the date that is printed on the certificate';
 $string['expirydate'] = 'Expiry date';

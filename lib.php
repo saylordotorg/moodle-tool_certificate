@@ -23,6 +23,7 @@
  */
 
 use tool_certificate\permission;
+use tool_certificate\local\custom_font_manager;
 
 /**
  * Serves certificate issues and other files.
@@ -40,6 +41,23 @@ function tool_certificate_pluginfile($course, $cm, $context, $filearea, $args, $
     global $CFG, $DB;
 
     require_once($CFG->libdir . '/filelib.php');
+
+    // Custom fonts uploaded in plugin settings.
+    if ($filearea === custom_font_manager::FILEAREA) {
+        if ($context->contextlevel !== CONTEXT_SYSTEM || !permission::can_manage_anywhere()) {
+            return false;
+        }
+
+        $relativepath = implode('/', $args);
+        $fullpath = '/' . $context->id . '/tool_certificate/' . custom_font_manager::FILEAREA . '/' . $relativepath;
+
+        $fs = get_file_storage();
+        if (!($file = $fs->get_file_by_hash(sha1($fullpath))) || $file->is_directory()) {
+            return false;
+        }
+
+        send_stored_file($file, 0, 0, $forcedownload);
+    }
 
     // We are positioning the elements.
     if ($filearea === 'image') {
@@ -164,6 +182,16 @@ function tool_certificate_get_fontawesome_icon_map() {
         'tool_certificate:download' => 'fa-download',
         'tool_certificate:linkedin' => 'fa-linkedin-square',
     ];
+}
+
+/**
+ * Callback after custom font setting is updated.
+ *
+ * @param string $settingname
+ * @return void
+ */
+function tool_certificate_customfonts_updated(string $settingname = ''): void {
+    custom_font_manager::process_uploaded_fonts();
 }
 
 /**

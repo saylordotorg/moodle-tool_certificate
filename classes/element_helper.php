@@ -506,6 +506,9 @@ class element_helper {
     private static function get_fonts() {
         global $CFG;
 
+        // Ensure any fonts uploaded via settings are converted before listing families.
+        \tool_certificate\local\custom_font_manager::process_uploaded_fonts(false);
+
         require_once($CFG->libdir . '/pdflib.php');
 
         $arrfonts = [];

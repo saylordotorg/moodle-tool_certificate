@@ -70,6 +70,17 @@ $PAGE->navbar->add($title, $pageurl);
 $PAGE->set_title($title);
 $PAGE->set_heading($heading, false);
 
+$previewfontcss = \tool_certificate\local\custom_font_manager::get_preview_font_face_css();
+if ($previewfontcss !== '') {
+    $previewfontcssjson = json_encode($previewfontcss);
+    $PAGE->requires->js_init_code(
+        "var styleel=document.createElement('style');" .
+        "styleel.setAttribute('data-tool-certificate-customfonts','1');" .
+        "styleel.appendChild(document.createTextNode({$previewfontcssjson}));" .
+        "document.head.appendChild(styleel);"
+    );
+}
+
 // Secondary navigation.
 $secondarynav = new \tool_certificate\local\views\template_secondary($PAGE, $template);
 $secondarynav->initialise();

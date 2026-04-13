@@ -93,7 +93,60 @@ final class element_test extends advanced_testcase {
      * Test get_date_formats
      */
     public function test_get_date_formats(): void {
-        $this->assertFalse(empty(\certificateelement_date\element::get_date_formats()));
+        $formats = \certificateelement_date\element::get_date_formats();
+        $this->assertFalse(empty($formats));
+        $this->assertArrayHasKey(\certificateelement_date\element::CUSTOMCERT_DATE_FORMAT_ORDINAL_DAY, $formats);
+        $this->assertArrayHasKey(\certificateelement_date\element::CUSTOMCERT_DATE_FORMAT_DAY_WORDS, $formats);
+    }
+
+    /**
+     * Tests custom ordinal day-month-year date format.
+     */
+    public function test_get_date_format_string_for_ordinal_day_month_year(): void {
+        $this->setAdminUser();
+        set_user_preference('timezone', 'UTC');
+
+        $method = new \ReflectionMethod(\certificateelement_date\element::class, 'get_date_format_string');
+        $method->setAccessible(true);
+
+        $cases = [
+            ['2024-12-21 12:00:00', '21st Day of December, 2024.'],
+            ['2026-01-03 12:00:00', '3rd Day of January, 2026.'],
+            ['2026-05-10 12:00:00', '10th Day of May, 2026.'],
+            ['2026-08-11 12:00:00', '11th Day of August, 2026.'],
+            ['2026-08-12 12:00:00', '12th Day of August, 2026.'],
+            ['2026-08-13 12:00:00', '13th Day of August, 2026.'],
+            ['2026-08-22 12:00:00', '22nd Day of August, 2026.'],
+        ];
+
+        foreach ($cases as [$datestring, $expected]) {
+            $timestamp = (new \DateTimeImmutable($datestring, new \DateTimeZone('UTC')))->getTimestamp();
+            $actual = $method->invoke(null, $timestamp, \certificateelement_date\element::CUSTOMCERT_DATE_FORMAT_ORDINAL_DAY);
+            $this->assertEquals($expected, $actual);
+        }
+    }
+
+    /**
+     * Tests custom written day-month-year date format.
+     */
+    public function test_get_date_format_string_for_day_month_year_words(): void {
+        $this->setAdminUser();
+        set_user_preference('timezone', 'UTC');
+
+        $method = new \ReflectionMethod(\certificateelement_date\element::class, 'get_date_format_string');
+        $method->setAccessible(true);
+
+        $cases = [
+            ['2024-08-21 12:00:00', 'this twenty-first day of August, two thousand and twenty-four.'],
+            ['2026-09-02 12:00:00', 'this second day of September, two thousand and twenty-six.'],
+            ['2025-12-10 12:00:00', 'this tenth day of December, two thousand and twenty-five.'],
+        ];
+
+        foreach ($cases as [$datestring, $expected]) {
+            $timestamp = (new \DateTimeImmutable($datestring, new \DateTimeZone('UTC')))->getTimestamp();
+            $actual = $method->invoke(null, $timestamp, \certificateelement_date\element::CUSTOMCERT_DATE_FORMAT_DAY_WORDS);
+            $this->assertEquals($expected, $actual);
+        }
     }
 
     /**

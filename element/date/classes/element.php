@@ -48,6 +48,16 @@ class element extends \tool_certificate\element {
     const CUSTOMCERT_DATE_EXPIRY = -2;
 
     /**
+     * @var string Show day with ordinal suffix and full month, e.g. "21st Day of December, 2024."
+     */
+    const CUSTOMCERT_DATE_FORMAT_ORDINAL_DAY = 'ordinaldayofmonthyear';
+
+    /**
+     * @var string Show date in words, e.g. "this twenty-first day of August, two thousand and twenty-four."
+     */
+    const CUSTOMCERT_DATE_FORMAT_DAY_WORDS = 'dayinwordsmonthyear';
+
+    /**
      * This function renders the form elements when adding a certificate element.
      *
      * @param \MoodleQuickForm $mform the edit_form instance
@@ -157,6 +167,8 @@ class element extends \tool_certificate\element {
             'strftimedaydate',
             'strftimedayshort',
             'strftimemonthyear',
+            self::CUSTOMCERT_DATE_FORMAT_ORDINAL_DAY,
+            self::CUSTOMCERT_DATE_FORMAT_DAY_WORDS,
         ];
 
         foreach ($strdateformats as $strdateformat) {
@@ -174,7 +186,11 @@ class element extends \tool_certificate\element {
      * @return string
      */
     protected static function get_date_format_string($date, $dateformat) {
-        if ($dateformat == 'strftimedatefullshortwleadingzero') {
+        if ($dateformat == self::CUSTOMCERT_DATE_FORMAT_ORDINAL_DAY) {
+            $certificatedate = self::get_ordinal_day_month_year_string($date);
+        } else if ($dateformat == self::CUSTOMCERT_DATE_FORMAT_DAY_WORDS) {
+            $certificatedate = self::get_day_month_year_words_string($date);
+        } else if ($dateformat == 'strftimedatefullshortwleadingzero') {
             $certificatedate = userdate($date, get_string('strftimedatefullshort', 'langconfig'), 99, false);
         } else if (get_string_manager()->string_exists($dateformat, 'langconfig')) {
             $certificatedate = userdate($date, get_string($dateformat, 'langconfig'));
@@ -182,5 +198,192 @@ class element extends \tool_certificate\element {
             $certificatedate = userdate($date, get_string('strftimedate', 'langconfig'));
         }
         return $certificatedate;
+    }
+
+    /**
+     * Returns a date in "21st Day of December, 2024." format.
+     *
+     * @param int $date
+     * @return string
+     */
+    protected static function get_ordinal_day_month_year_string(int $date): string {
+        $dateparts = usergetdate($date);
+        $day = (int)$dateparts['mday'];
+        $year = (int)$dateparts['year'];
+        $month = userdate($date, '%B');
+        $a = (object)[
+            'day' => $day,
+            'suffix' => self::get_english_ordinal_suffix($day),
+            'month' => $month,
+            'year' => $year,
+        ];
+        return get_string('dateformatordinaldayofmonthyear', 'certificateelement_date', $a);
+    }
+
+    /**
+     * Returns ordinal suffix for an integer day value.
+     *
+     * @param int $day
+     * @return string
+     */
+    protected static function get_english_ordinal_suffix(int $day): string {
+        $mod100 = $day % 100;
+        if ($mod100 >= 11 && $mod100 <= 13) {
+            return 'th';
+        }
+
+        $mod10 = $day % 10;
+        if ($mod10 == 1) {
+            return 'st';
+        } else if ($mod10 == 2) {
+            return 'nd';
+        } else if ($mod10 == 3) {
+            return 'rd';
+        }
+        return 'th';
+    }
+
+    /**
+     * Returns a date in "this twenty-first day of August, two thousand and twenty-four." format.
+     *
+     * @param int $date
+     * @return string
+     */
+    protected static function get_day_month_year_words_string(int $date): string {
+        $dateparts = usergetdate($date);
+        $day = (int)$dateparts['mday'];
+        $year = (int)$dateparts['year'];
+        $month = userdate($date, '%B');
+        $a = (object)[
+            'dayword' => self::get_english_ordinal_day_word($day),
+            'month' => $month,
+            'yearword' => self::get_english_number_words($year),
+        ];
+        return get_string('dateformatdayinwordsmonthyear', 'certificateelement_date', $a);
+    }
+
+    /**
+     * Returns the written ordinal form for days 1 to 31.
+     *
+     * @param int $day
+     * @return string
+     */
+    protected static function get_english_ordinal_day_word(int $day): string {
+        $ordinaldaywords = [
+            1 => 'first',
+            2 => 'second',
+            3 => 'third',
+            4 => 'fourth',
+            5 => 'fifth',
+            6 => 'sixth',
+            7 => 'seventh',
+            8 => 'eighth',
+            9 => 'ninth',
+            10 => 'tenth',
+            11 => 'eleventh',
+            12 => 'twelfth',
+            13 => 'thirteenth',
+            14 => 'fourteenth',
+            15 => 'fifteenth',
+            16 => 'sixteenth',
+            17 => 'seventeenth',
+            18 => 'eighteenth',
+            19 => 'nineteenth',
+            20 => 'twentieth',
+            21 => 'twenty-first',
+            22 => 'twenty-second',
+            23 => 'twenty-third',
+            24 => 'twenty-fourth',
+            25 => 'twenty-fifth',
+            26 => 'twenty-sixth',
+            27 => 'twenty-seventh',
+            28 => 'twenty-eighth',
+            29 => 'twenty-ninth',
+            30 => 'thirtieth',
+            31 => 'thirty-first',
+        ];
+        return $ordinaldaywords[$day] ?? (string)$day;
+    }
+
+    /**
+     * Converts a positive integer to English words.
+     *
+     * @param int $number
+     * @return string
+     */
+    protected static function get_english_number_words(int $number): string {
+        $units = [
+            0 => 'zero',
+            1 => 'one',
+            2 => 'two',
+            3 => 'three',
+            4 => 'four',
+            5 => 'five',
+            6 => 'six',
+            7 => 'seven',
+            8 => 'eight',
+            9 => 'nine',
+            10 => 'ten',
+            11 => 'eleven',
+            12 => 'twelve',
+            13 => 'thirteen',
+            14 => 'fourteen',
+            15 => 'fifteen',
+            16 => 'sixteen',
+            17 => 'seventeen',
+            18 => 'eighteen',
+            19 => 'nineteen',
+        ];
+
+        $tens = [
+            20 => 'twenty',
+            30 => 'thirty',
+            40 => 'forty',
+            50 => 'fifty',
+            60 => 'sixty',
+            70 => 'seventy',
+            80 => 'eighty',
+            90 => 'ninety',
+        ];
+
+        if ($number < 0) {
+            return 'minus ' . self::get_english_number_words(abs($number));
+        }
+        if ($number < 20) {
+            return $units[$number];
+        }
+        if ($number < 100) {
+            $baseten = intdiv($number, 10) * 10;
+            $remainder = $number % 10;
+            return $tens[$baseten] . ($remainder ? '-' . $units[$remainder] : '');
+        }
+        if ($number < 1000) {
+            $hundreds = intdiv($number, 100);
+            $remainder = $number % 100;
+            $text = $units[$hundreds] . ' hundred';
+            if ($remainder) {
+                $text .= ' and ' . self::get_english_number_words($remainder);
+            }
+            return $text;
+        }
+        if ($number < 1000000) {
+            $thousands = intdiv($number, 1000);
+            $remainder = $number % 1000;
+            $text = self::get_english_number_words($thousands) . ' thousand';
+            if ($remainder) {
+                $text .= $remainder < 100 ? ' and ' : ' ';
+                $text .= self::get_english_number_words($remainder);
+            }
+            return $text;
+        }
+
+        $millions = intdiv($number, 1000000);
+        $remainder = $number % 1000000;
+        $text = self::get_english_number_words($millions) . ' million';
+        if ($remainder) {
+            $text .= $remainder < 100 ? ' and ' : ' ';
+            $text .= self::get_english_number_words($remainder);
+        }
+        return $text;
     }
 }
