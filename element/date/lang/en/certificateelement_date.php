@@ -22,12 +22,13 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+$string['completiondate'] = 'Completion date';
 $string['dateformat'] = 'Date format';
 $string['dateformat_help'] = 'This is the format of the date that will be displayed';
 $string['dateformatdayinwordsmonthyear'] = 'this {$a->dayword} day of {$a->month}, {$a->yearword}.';
 $string['dateformatordinaldayofmonthyear'] = '{$a->day}{$a->suffix} Day of {$a->month}, {$a->year}.';
 $string['dateitem'] = 'Date item';
-$string['dateitem_help'] = 'This will be the date that is printed on the certificate';
+$string['dateitem_help'] = 'This will be the date that is printed on the certificate. The completion date is the day the student completed the awarded work (for example, the day they sat the final exam), even when the certificate itself was issued later.';
 $string['expirydate'] = 'Expiry date';
 $string['issueddate'] = 'Issued date';
 $string['pluginname'] = 'Date';

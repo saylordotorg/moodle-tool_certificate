@@ -150,6 +150,178 @@ final class element_test extends advanced_testcase {
     }
 
     /**
+     * Creates a quiz with a pass mark and returns the quiz record.
+     *
+     * @param \stdClass $course
+     * @param float $gradepass pass mark on the quiz grade item, 0 for none
+     * @return \stdClass
+     */
+    protected function create_quiz(\stdClass $course, float $gradepass): \stdClass {
+        global $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+
+        $quiz = $this->getDataGenerator()->create_module('quiz',
+            ['course' => $course->id, 'grade' => 100, 'sumgrades' => 10]);
+        if ($gradepass > 0) {
+            $item = \grade_item::fetch(['itemtype' => 'mod', 'itemmodule' => 'quiz',
+                'iteminstance' => $quiz->id, 'courseid' => $course->id, 'itemnumber' => 0]);
+            $item->gradepass = $gradepass;
+            $item->update();
+        }
+        return $quiz;
+    }
+
+    /**
+     * Inserts a finished quiz attempt row.
+     *
+     * @param \stdClass $quiz
+     * @param int $userid
+     * @param int $attempt attempt number
+     * @param int $timefinish
+     * @param float $sumgrades
+     */
+    protected function create_finished_attempt(\stdClass $quiz, int $userid, int $attempt, int $timefinish,
+            float $sumgrades): void {
+        global $DB;
+        static $uniqueid = 777000;
+
+        $DB->insert_record('quiz_attempts', (object)[
+            'quiz' => $quiz->id,
+            'userid' => $userid,
+            'attempt' => $attempt,
+            'uniqueid' => ++$uniqueid,
+            'layout' => '1,0',
+            'currentpage' => 0,
+            'preview' => 0,
+            'state' => 'finished',
+            'timestart' => $timefinish - HOURSECS,
+            'timefinish' => $timefinish,
+            'timemodified' => $timefinish,
+            'timemodifiedoffline' => 0,
+            'sumgrades' => $sumgrades,
+        ]);
+    }
+
+    /**
+     * A raw program/degree completion timestamp stored with the issue wins over everything else.
+     */
+    public function test_get_completion_date_from_issue_data(): void {
+        $completed = 1700000000;
+        $issue = (object)[
+            'userid' => 123,
+            'courseid' => null,
+            'timecreated' => $completed + (5 * DAYSECS),
+            'data' => json_encode(['programtimecompleted' => $completed]),
+        ];
+        $this->assertEquals($completed, \certificateelement_date\element::get_completion_date($issue));
+    }
+
+    /**
+     * For a course certificate the earning exam attempt's finish time is used, even when the
+     * certificate was issued days later (e.g. after a proctoring risk hold release).
+     */
+    public function test_get_completion_date_from_exam_attempt(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_user();
+        $exam = $this->create_quiz($course, 70.0);
+        $practice = $this->create_quiz($course, 0.0);
+
+        $examday = 1700000000;
+        // Failed first try, passing attempt a week later, practice quiz taken afterwards.
+        $this->create_finished_attempt($exam, (int)$user->id, 1, $examday - WEEKSECS, 3.0);
+        $this->create_finished_attempt($exam, (int)$user->id, 2, $examday, 8.0);
+        $this->create_finished_attempt($practice, (int)$user->id, 1, $examday + DAYSECS, 9.0);
+
+        $issue = (object)[
+            'userid' => $user->id,
+            'courseid' => $course->id,
+            'timecreated' => $examday + (4 * DAYSECS),
+            'data' => json_encode(['courseid' => $course->id]),
+        ];
+        $this->assertEquals($examday, \certificateelement_date\element::get_completion_date($issue));
+    }
+
+    /**
+     * Attempts finished after the certificate was issued are ignored.
+     */
+    public function test_get_completion_date_ignores_attempts_after_issue(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_user();
+        $exam = $this->create_quiz($course, 70.0);
+
+        $examday = 1700000000;
+        $issuetime = $examday + (2 * DAYSECS);
+        $this->create_finished_attempt($exam, (int)$user->id, 1, $examday, 8.0);
+        $this->create_finished_attempt($exam, (int)$user->id, 2, $issuetime + DAYSECS, 9.5);
+
+        $issue = (object)[
+            'userid' => $user->id,
+            'courseid' => $course->id,
+            'timecreated' => $issuetime,
+            'data' => null,
+        ];
+        $this->assertEquals($examday, \certificateelement_date\element::get_completion_date($issue));
+    }
+
+    /**
+     * With no exam attempts the course completion date is used, then the issue date.
+     */
+    public function test_get_completion_date_fallbacks(): void {
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_user();
+        $issuetime = 1700500000;
+
+        $issue = (object)[
+            'userid' => $user->id,
+            'courseid' => $course->id,
+            'timecreated' => $issuetime,
+            'data' => null,
+        ];
+        $this->assertEquals($issuetime, \certificateelement_date\element::get_completion_date($issue));
+
+        $completed = $issuetime - (3 * DAYSECS);
+        $DB->insert_record('course_completions', (object)[
+            'userid' => $user->id,
+            'course' => $course->id,
+            'timeenrolled' => $completed - WEEKSECS,
+            'timestarted' => $completed - WEEKSECS,
+            'timecompleted' => $completed,
+            'reaggregate' => 0,
+        ]);
+        $this->assertEquals($completed, \certificateelement_date\element::get_completion_date($issue));
+    }
+
+    /**
+     * A certificate with a completion date element renders for preview and for a real issue.
+     */
+    public function test_render_completion_date(): void {
+        $certificate1 = $this->get_generator()->create_template((object)['name' => 'Certificate 1']);
+        $pageid = $this->get_generator()->create_page($certificate1)->get_id();
+        $formdata = ['name' => 'Date element',
+            'dateitem' => \certificateelement_date\element::CUSTOMCERT_DATE_COMPLETION,
+            'dateformat' => 'strftimedate', ];
+        $e = $this->get_generator()->create_element($pageid, 'date', $formdata);
+        $this->assertNotEmpty($e->render_html());
+
+        // Generate PDF for preview.
+        $filecontents = $this->get_generator()->generate_pdf($certificate1, true);
+        $this->assertGreaterThan(30000, core_text::strlen($filecontents, '8bit'));
+
+        // Generate PDF for an issue in a course with an exam attempt.
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_user();
+        $exam = $this->create_quiz($course, 70.0);
+        $this->create_finished_attempt($exam, (int)$user->id, 1, time() - (3 * DAYSECS), 9.0);
+
+        $issue = $this->get_generator()->issue($certificate1, $user, null,
+            ['courseid' => $course->id], 'mod_coursecertificate', (int)$course->id);
+        $filecontents = $this->get_generator()->generate_pdf($certificate1, false, $issue);
+        $this->assertGreaterThan(30000, core_text::strlen($filecontents, '8bit'));
+    }
+
+    /**
      * Tests that the edit element form can be initiated without any errors
      */
     public function test_edit_element_form(): void {
