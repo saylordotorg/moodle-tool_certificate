@@ -48,6 +48,11 @@ class element extends \tool_certificate\element {
     const CUSTOMCERT_DATE_EXPIRY = -2;
 
     /**
+     * @var int Show the date the student completed the awarded work (e.g. sat the final exam).
+     */
+    const CUSTOMCERT_DATE_COMPLETION = -3;
+
+    /**
      * @var string Show day with ordinal suffix and full month, e.g. "21st Day of December, 2024."
      */
     const CUSTOMCERT_DATE_FORMAT_ORDINAL_DAY = 'ordinaldayofmonthyear';
@@ -67,6 +72,7 @@ class element extends \tool_certificate\element {
         // Get the possible date options.
         $dateoptions = [];
         $dateoptions[self::CUSTOMCERT_DATE_ISSUE] = get_string('issueddate', 'certificateelement_date');
+        $dateoptions[self::CUSTOMCERT_DATE_COMPLETION] = get_string('completiondate', 'certificateelement_date');
         $dateoptions[self::CUSTOMCERT_DATE_EXPIRY] = get_string('expirydate', 'certificateelement_date');
 
         $mform->addElement('select', 'dateitem', get_string('dateitem', 'certificateelement_date'), $dateoptions);
@@ -106,6 +112,8 @@ class element extends \tool_certificate\element {
             $date = time();
         } else if ($dateinfo['dateitem'] == self::CUSTOMCERT_DATE_EXPIRY) {
             $date = $issue->expires;
+        } else if ($dateinfo['dateitem'] == self::CUSTOMCERT_DATE_COMPLETION) {
+            $date = self::get_completion_date($issue);
         } else {
             $date = $issue->timecreated;
         }
@@ -115,6 +123,133 @@ class element extends \tool_certificate\element {
             \tool_certificate\element_helper::render_content($pdf, $this,
                 $this->get_date_format_string($date, $dateinfo['dateformat']));
         }
+    }
+
+    /**
+     * Resolve the date the student completed the work the certificate was awarded for.
+     *
+     * Certificates can be issued days after the student earned them (for example while a
+     * proctoring risk review holds the grade), so the issue timestamp drifts from the day the
+     * student actually sat the exam. This resolves, in order: a raw completion timestamp stored
+     * with the issue (program/degree certificates), the quiz attempt that earned the award in
+     * the issue's course, the user's course completion date, and finally the issue date itself.
+     *
+     * @param \stdClass $issue the issue being rendered
+     * @return int resolved timestamp, never 0 unless the issue has no timecreated either
+     */
+    public static function get_completion_date(\stdClass $issue): int {
+        $issuetime = (int)($issue->timecreated ?? 0);
+
+        // Program and degree certificates (enrol_programs) store the raw completion timestamp
+        // in the issue data; legacy program issues used the 'completiondate' key.
+        $data = @json_decode($issue->data ?? '', true);
+        if (is_array($data)) {
+            foreach (['timecompleted', 'programtimecompleted', 'completiondate'] as $key) {
+                if (!empty($data[$key]) && is_numeric($data[$key])) {
+                    return (int)$data[$key];
+                }
+            }
+        }
+
+        if (!empty($issue->courseid) && !empty($issue->userid)) {
+            if ($date = self::get_exam_date((int)$issue->courseid, (int)$issue->userid, $issuetime)) {
+                return $date;
+            }
+            if ($date = self::get_course_completion_date((int)$issue->courseid, (int)$issue->userid)) {
+                return $date;
+            }
+        }
+
+        return $issuetime;
+    }
+
+    /**
+     * When the student finished the quiz attempt that earned them the certificate.
+     *
+     * Only quizzes that must be passed (a pass mark on their grade item) count as exams; when no
+     * quiz in the course carries a pass mark, every quiz counts. Per quiz the earning attempt is
+     * the earliest one with the student's top score, and with several exams the latest of those
+     * dates wins. Attempts finished after the certificate was issued never count.
+     *
+     * @param int $courseid course the certificate was issued in
+     * @param int $userid student
+     * @param int $issuetime issue timestamp, 0 to consider all attempts
+     * @return int timestamp of the earning attempt's finish, or 0 when there is none
+     */
+    protected static function get_exam_date(int $courseid, int $userid, int $issuetime): int {
+        global $DB;
+
+        try {
+            $params = ['courseid' => $courseid, 'userid' => $userid, 'state' => 'finished'];
+            $timesql = '';
+            if ($issuetime > 0) {
+                $timesql = ' AND qa.timefinish <= :issuetime';
+                $params['issuetime'] = $issuetime;
+            }
+            $attempts = $DB->get_records_sql(
+                "SELECT qa.id, qa.quiz, qa.sumgrades, qa.timefinish, COALESCE(gi.gradepass, 0) AS gradepass
+                   FROM {quiz_attempts} qa
+                   JOIN {quiz} q ON q.id = qa.quiz AND q.course = :courseid
+              LEFT JOIN {grade_items} gi ON gi.itemtype = 'mod' AND gi.itemmodule = 'quiz'
+                        AND gi.iteminstance = q.id AND gi.itemnumber = 0 AND gi.courseid = q.course
+                  WHERE qa.userid = :userid AND qa.preview = 0 AND qa.state = :state
+                        AND qa.timefinish > 0{$timesql}
+               ORDER BY qa.quiz ASC, qa.timefinish ASC, qa.id ASC",
+                $params
+            );
+        } catch (\Throwable $e) {
+            return 0;
+        }
+
+        $haspassmark = false;
+        foreach ($attempts as $attempt) {
+            if ((float)$attempt->gradepass > 0) {
+                $haspassmark = true;
+                break;
+            }
+        }
+
+        $byquiz = [];
+        foreach ($attempts as $attempt) {
+            if ($haspassmark && (float)$attempt->gradepass <= 0) {
+                continue;
+            }
+            $byquiz[$attempt->quiz][] = $attempt;
+        }
+
+        $date = 0;
+        foreach ($byquiz as $quizattempts) {
+            $best = null;
+            foreach ($quizattempts as $attempt) {
+                // Attempts are ordered by finish time, so a strict comparison keeps the
+                // earliest attempt with the top score.
+                if ($best === null || (float)$attempt->sumgrades > (float)$best->sumgrades) {
+                    $best = $attempt;
+                }
+            }
+            $date = max($date, (int)$best->timefinish);
+        }
+
+        return $date;
+    }
+
+    /**
+     * The user's course completion date, when recorded.
+     *
+     * @param int $courseid course id
+     * @param int $userid user id
+     * @return int timestamp or 0
+     */
+    protected static function get_course_completion_date(int $courseid, int $userid): int {
+        global $DB;
+
+        try {
+            $time = $DB->get_field('course_completions', 'timecompleted',
+                ['course' => $courseid, 'userid' => $userid]);
+        } catch (\Throwable $e) {
+            return 0;
+        }
+        return (int)$time;
     }
 
     /**
